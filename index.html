@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/openlayers/openlayers.github.io@master/en/v6.1.1/css/ol.css"
+    type="text/css">
+  <style>
+    .map {
+      height: 80vh;
+      width: 100%;
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/gh/openlayers/openlayers.github.io@master/en/v6.1.1/build/ol.js"></script>
+  <title>OpenLayers example</title>
+</head>
+
+<body>
+  <h2>My Map</h2>
+  <div id="info"></div>
+  <div id="map" class="map"></div>
+  <script type="text/javascript">
+
+    var roofSource = new ol.source.ImageWMS({
+      url: 'https://geoserver.mundialis.de/geoserver/meike_reimann/wms',
+      params: {
+        'LAYERS': 'meike_reimann:Gruendachkataster_Bonn',
+      },
+      tiled: true,
+      projection: 'EPSG:3857',
+      serverType: 'geoserver',
+      crossOrigin: 'Anonymous'
+    });
+
+    var roofLayer = new ol.layer.Image({
+      source: roofSource
+    });
+
+    var dopSource = new ol.source.ImageWMS({
+      url: 'https://www.wms.nrw.de/geobasis/wms_nw_dop',
+      params: {
+        'LAYERS': 'nw_dop_rgb',
+      },
+      tiled: true,
+      projection: 'EPSG:3857',
+      serverType: 'geoserver',
+      crossOrigin: 'Anonymous'
+    });
+
+    var dopLayer = new ol.layer.Image({
+      source: dopSource
+    });
+
+    var denkmalSource = new ol.source.ImageWMS({
+      url: 'https://geoserver.mundialis.de/geoserver/meike_reimann/wms',
+      params: {
+        'LAYERS': 'meike_reimann:Denkmalauskunft',
+      },
+      tiled: true,
+      projection: 'EPSG:4326',
+      serverType: 'geoserver',
+      crossOrigin: 'Anonymous'
+    });
+
+    var denkmalLayer = new ol.layer.Image({
+      source: denkmalSource
+    });
+
+    var denkmalFlSource = new ol.source.ImageWMS({
+      url: 'https://geoserver.mundialis.de/geoserver/meike_reimann/wms',
+      params: {
+        'LAYERS': 'meike_reimann:Denkmalflaechen',
+      },
+      tiled: true,
+      projection: 'EPSG:4326',
+      serverType: 'geoserver',
+      crossOrigin: 'Anonymous'
+    });
+
+    var denkmalFlLayer = new ol.layer.Image({
+      source: denkmalFlSource
+    });
+
+    var ortsteileSource = new ol.source.ImageWMS({
+      url: 'https://geoserver.mundialis.de/geoserver/meike_reimann/wms',
+      params: {
+        'LAYERS': 'meike_reimann:Ortsteile_Bonn',
+      },
+      tiled: true,
+      projection: 'EPSG:4326',
+      serverType: 'geoserver',
+      crossOrigin: 'Anonymous'
+    });
+
+    var ortsteileLayer = new ol.layer.Image({
+      source: ortsteileSource
+    });
+
+    var view = new ol.View({
+      center: [791314, 6568841],
+      zoom: 12,
+      minZoom: 12,
+      extent: [776371,6554949, 804680,6581724]
+    });
+
+    var map = new ol.Map({
+      target: 'map',
+      layers: [
+        new ol.layer.Tile({
+          source: new ol.source.OSM()
+        }),
+        dopLayer,
+        roofLayer,
+        denkmalLayer,
+        denkmalFlLayer,
+        ortsteileLayer
+      ],
+      view: view,
+    });
+
+    map.on('singleclick', function (evt) {
+      document.getElementById('info').innerHTML = '';
+      var viewResolution = /** @type {number} */ (view.getResolution());
+      var url = roofSource.getFeatureInfoUrl(
+        evt.coordinate, viewResolution, 'EPSG:3857',
+        { 'INFO_FORMAT': 'application/json' });
+      if (url) {
+        fetch(url)
+          .then(function (response) { return response.json(); })
+          .then(function (json) {
+            var text = '<table><tr><th>Potenzialklasse</th><th>Dachfläche [qm]</th><th>Ortsname</th><th>Bezirksname</th></tr>';
+            for (var i = 0; i < json.features.length; i++) {
+              var line = '<tr>';
+              line += '<td>' + json.features[i].properties.Klasse + '</td>';
+              line += '<td>' + json.features[i].properties.areasl.toFixed(1) + '</td>';
+              line += '<td>' + json.features[i].properties.Ortsname + '</td>';
+              line += '<td>' + json.features[i].properties.Bezirknm + '</td>';
+              line += '</tr>';
+              text += line;
+            }
+            text += '</table>';
+            document.getElementById('info').innerHTML = text;
+          });
+      }
+    });
+  </script>
+</body>
+
+</html>
