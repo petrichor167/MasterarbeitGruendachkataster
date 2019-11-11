@@ -1,0 +1,162 @@
+
+################################################################################
+#
+# NAME:         Potential analysis for roof greening in Bonn (NRW)
+#
+# AUTHOR(S):    Meike Reimann (2019)
+#
+#
+# PURPOSE:      download, compression, processing  of LIDAR and other required
+#						  	data for rooftop greening analysis using Open Data NRW and
+#								Open Data Bonn
+#
+# REQUIREMENTS: PDAL (http://www.pdal.io), standard system tools
+#							  (basename, cat, ...), GRASS GIS (https://grass.osgeo.org/)
+#
+#
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation; either version 2 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  sources : 1.Bundesstadt Bonn - https://www.opendata.bonn.de (CCO 1.0)
+#            2.Land NRW (2019) Datenlizenz Deutschland - Namensnennung -
+#							 Version 2.0 (www.govdata.de/dl-de/by-2-0)
+#
+#
+# PROCEDURE: 1. downloading and processing data
+# PROCEDURE: 2. Import of DGM, DOM and DOP  and create mosaik for DOM, DGM und
+#								DOP
+# PROCEDURE: 3. Import of other datasets like ALKIS, OSM-Buildings or
+#								Denkmalschutz
+################################################################################
+
+
+
+# PROCEDURE: 1. downloading and processing data
+#
+#
+#		LIDAR  scripts  Markus Neteler (2018 - 2019)
+#				/scratch/Meike/Daten/Bonn/XYZ/DOM
+#				1. using fetch list for downloading .xyz files
+#							fetch_openNRW_LIDAR_list.sh
+#				2  parallelized unpacking unpack_parallel_openNRW_LIDAR_ZIPs.sh
+#				3. using script for convert xyz to laz format
+#					using pdal convert_xyz2laz_pdal.sh
+#
+#		DGM  script  Markus Neteler (2017 - 2019)
+#				/scratch/Meike/Daten/Bonn/XYZ/DGM1
+#				1. Download the DGM1 XYZ files on https://www.opengeodata.nrw.de
+#				2. Using this script to import openNRW DGM XYZ data as regularly
+#					gridded DGMs DGM_convert_xyz2laz_pdal_docker.sh
+#				3.EPSG 4647 --> EPSG 25832 hack:
+#					r.in.opennrw_dgm_epgs25832.sh
+#
+#		DOP
+#				/scratch/Meike/Daten/Bonn/DOP
+#				wget https://www.opengeodata.nrw.de
+#
+#		OSM Buildings
+#				1.Quick OSM in QGIS
+#				2.download osm buildings of Bonn with QGIS QuickOSM
+#					"key=buildings" in "Bonn"
+#				3.export as shapefile in /scratch/Meike/Daten/Bonn/OSM  and import
+#					 in GRASS GIS (EPSG 25832)
+#
+#		ALKIS Data
+#				/scratch/Meike/Daten/Bonn/ALKIS
+#				wget https://www.opengeodata.nrw.de/produkte/geobasis/lika/alkis_sek
+#						 /hu_nw/
+#
+#		monument protection
+#				/scratch/Meike/Daten/Bonn/Denkmal
+#				wget http://stadtplan.bonn.de/geojson?OD=3951 -O  denkmal.json
+#				wgethttps://stadtplan.bonn.de/geojson?OD=3347 -O  denkmalpunkt.json
+#
+#		districts of Bonn
+#				/scratch/Meike/Daten/Bonn/Stadtbezirke
+#				wget https://stadtplan.bonn.de/geojson?Thema=21247 -O ortsteile.json
+#
+#
+################################################################################
+
+
+#PROCEDURE: 2. import DOM, DGM and Dop as a loop with different screens and
+								#create mosaik for DOM, DGM und DOP
+
+					screen -S DOP
+					grass78 -c /scratch/grassdata/Dachbegruenung_BN/DOPBonn
+					cd /scratch/Meike/Daten/Bonn/DOP
+					for mydop in $(ls *.jp2) ; do r.import input=$mydop \
+					 	output=$(basename $mydop .jp2)  memory=2000 ; done
+
+
+					g.mapset mapset=DOPBonn
+					MAPSDOP3=`g.list type=raster separator=comma pattern="*nw.3"`
+					g.region raster=$MAPSDOP3
+					r.buildvrt in=$MAPSDOP3 out=dop3_mosaik
+
+					MAPSDOP4=`g.list type=raster separator=comma pat="*nw.4"`
+					g.region raster=$MAPSDOP4
+					r.buildvrt in=$MAPSDOP4 out=dop4_mosaik
+
+					screen -S DGM
+					grass78 -c /scratch/grassdata/Dachbegruenung_BN/DGMBonn
+					cd /scratch/Meike/Daten/Bonn/LAZ/DGM
+					g.region raster=dop3_mosaik@DOPBonn res=1
+					for mydgm in $(ls *.laz) ; do r.in.pdal input=$mydgm \
+						output=$(basename $mydgm .laz) method=percentile pth=90; done
+
+					screen -S DOM
+					grass78 -c /scratch/grassdata/Dachbegruenung_BN/DOMBonn
+					cd /scratch/Meike/Daten/Bonn/LAZ/DOM
+					g.region raster=dop3_mosaik@DOPBonn res=1
+					for mydom in $(ls dom1l-fp*.laz) ; do r.in.pdal input=$mydom \
+						output=$(basename $mydom .laz) method=percentile pth=90; done
+
+					g.mapset mapset=DGMBonn
+					MAPSDGM=`g.list type=raster separator=comma pat="dgm1_*"`
+					g.region raster=$MAPSDGM res=1
+					r.buildvrt in=$MAPSDGM out=dgm_mosaik
+
+					g.mapset mapset=DOMBonn
+					MAPSDOM=`g.list type=raster separator=comma pat="dom*"`
+					g.region raster=$MAPSDOM res=1
+					r.buildvrt in=$MAPSDOM out=dom_mosaik
+
+#PROCEDURE: 3. Import other relevant data e.g. ALKIS, OSM, Denkmal
+
+					#import ALKIS und OSM in new mapset
+					g.mapset -c mapset=Bonn_buildings location=Dachbegruenung_BN
+					v.import in=/scratch/Meike/Daten/Bonn/ALKIS/bda/gebauedeBauwerk.shp \
+						out=ALKIS
+					v.import in=/scratch/Meike/Daten/Bonn/vektoren/buildingsBonn.shp \
+					 	out=OSMBuildings
+
+
+					#create new location for "ortsteile" and "denkmal" and reproject
+						#vectors to EPSG25832
+					#1. create new location "Bonn_ortsteile" and use option"Einlesen von
+						#Projektions- und Datumsinformationen aus georeferenzierter Datei"
+					v.import in=/scratch/Meike/Daten/Bonn/Stadtbezirke/ortsteile.json \
+					  out=ortsteile
+					v.import in=/scratch/Meike/Daten/Bonn/Denkmal/denkmal.json out=denkmal
+					v.import in=/scratch/Meike/Daten/Bonn/Denkmal/denkmalpunkz.json \
+									 out=denkmalpunkt
+					g.region vector=ortsteile
+
+					#import and reproject denkmalschutz vector and ortsteil vector
+						#to location=Dachbegruenung_BN
+					g.mapset -c mapset=ortsteil location=Dachbegruenung_BN
+					v.proj location=Bonn_ortsteile mapset=PERMANENT input=ortsteile\
+					 	out=ortsteile_reproj
+					g.mapset -c mapset=denkmal location=Dachbegruenung_BN
+					v.proj location=Bonn_ortsteile mapset=PERMANENT input=denkmal \
+					 	out=denkmal_reproj
+					v.proj location=Bonn_ortsteile mapset=PERMANENT input=denkmalpunkt \
+						 	out=denkmalpunkt_reproj
